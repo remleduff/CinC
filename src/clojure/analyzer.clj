@@ -1,32 +1,29 @@
 (ns clojure.analyzer
   (:refer-clojure :exclude [*ns* *file* macroexpand-1])
   (:require [clojure.java.io :as io]
-   [clojure.string :as string])
+            [clojure.string :as string])
   (:use [clojure pprint]))
 
-(let [mappings (.getMappings (clojure.lang.Namespace/find 'clojure.core))]
-  (defonce namespaces (atom {'clojure.core {:name 'clojure.core :defs mappings}
-                             'user {:name 'user}}))
-  )
+(defonce namespaces (atom {'clojure.core {:name 'clojure.core :defs (ns-map 'clojure.core)}
+                           'user {:name 'user}}))
 
 (def ^:dynamic *ns* 'user)
 (def ^:dynamic *file* nil)
 (def ^:dynamic *warn-on-undeclared* false)
+(def ^:dynamic *recur-frames* nil)
 
 (def specials '#{if def fn* let* loop* recur . reify})
-
-(def ^:dynamic *recur-frames* nil)
 
 (defmacro disallowing-recur [& body]
   `(binding [*recur-frames* (cons nil *recur-frames*)] ~@body))
 
-(defmulti parse (fn [op & rest] op))
+(defmulti parse (fn [op & _] op))
 
 (declare analyze-symbol analyze-seq analyze-map analyze-vector analyze-set)
 
 (defn analyze
   "Given an environment, a map containing {:locals (mapping of names to bindings), :context
-(one of :statement, :expr, :return), :ns (a symbol naming the
+ (one of :statement, :expr, :return), :ns (a symbol naming the
 compilation ns)}, and form, returns an expression object (a map
 containing at least :form, :op and :env keys). If expr has any (immediately)
 nested exprs, must have :children [exprs...] entry. This will
@@ -34,10 +31,9 @@ facilitate code walking without knowing the details of the op set."
   ([form] (analyze {:ns (@namespaces *ns*) :context :statement :locals {}} form nil))
   ([env form] (analyze env form nil))
   ([env form name]
-   (let [form
-         (if (instance? clojure.lang.LazySeq form)
-           (or (seq form) ())
-           form)]
+   (let [form (if (instance? clojure.lang.LazySeq form)
+                (or (seq form) ())
+                form)]
      (cond
        (symbol? form) (analyze-symbol env form)
        (and (seq? form) (seq form)) (analyze-seq env form name)
@@ -117,7 +113,7 @@ facilitate code walking without knowing the details of the op set."
           (var-fn env (get-in @namespaces [(-> env :ns :name ) :uses sym]) (name sym))
 
           :else
-          (let [full-ns (if (core-name? env sym) 'clojure.core (-> env :ns :name ))]
+          (let [full-ns (if (core-name? env sym) 'clojure.core (-> env :ns :name))]
             (var-fn env full-ns sym)))]
     {:name nm})))
 
@@ -151,11 +147,11 @@ facilitate code walking without knowing the details of the op set."
                       (-> env :ns :excludes sym))
           (if-let [nstr (namespace sym)]
             (when-let [ns (find-ns (symbol nstr))]
-              (.findInternedVar ^clojure.lang.Namespace ns (symbol (name sym))))
+              (ns-resolve ns (symbol (name sym))))
             (if-let [nsym (-> env :ns :defs sym)]
-              (.findInternedVar ^clojure.lang.Namespace (find-ns nsym) sym)
-              (.findInternedVar ^clojure.lang.Namespace (find-ns 'clojure.core) sym))))]
-    (when (and mvar (.isMacro ^clojure.lang.Var mvar))
+              (ns-resolve (find-ns nsym) sym)
+              (ns-resolve (find-ns 'clojure.core) sym))))]
+    (when (and mvar (:macro (meta mvar)))
       @mvar)))
 
 (defn macroexpand-1 [env form]
@@ -190,7 +186,7 @@ facilitate code walking without knowing the details of the op set."
 
 (defn analyze-map
   [env form name]
-  (let [expr-env (assoc env :context :expr )
+  (let [expr-env (assoc env :context :expr)
         simple-keys? (every? #(or (string? %) (keyword? %))
       (keys form))
         ks (disallowing-recur (vec (map #(analyze expr-env % name) (keys form))))
@@ -201,7 +197,7 @@ facilitate code walking without knowing the details of the op set."
 
 (defn analyze-vector
   [env form name]
-  (let [expr-env (assoc env :context :expr )
+  (let [expr-env (assoc env :context :expr)
         items (disallowing-recur (vec (map #(analyze expr-env % name) form)))]
     (analyze-wrap-meta {:op :vector :env env :form form :children items} name)))
 
@@ -356,13 +352,13 @@ facilitate code walking without knowing the details of the op set."
 (defn- classify-dot-form
   [[target member args]]
   [(cond (nil? target) ::error
-                       :default      ::expr)
+         :default      ::expr)
    (cond (property-symbol? member) ::property
-                                   (symbol? member)          ::symbol
-                                   (seq? member)             ::list
-                                   :default                  ::error)
+         (symbol? member)          ::symbol
+         (seq? member)             ::list
+         :default                  ::error)
    (cond (nil? args) ()
-                     :default    ::expr)])
+         :default    ::expr)])
 
 (defmulti build-dot-form #(classify-dot-form %))
 
