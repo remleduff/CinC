@@ -85,8 +85,8 @@
 (def ^:dynamic *trace-bytecode* false)
 (def ^:dynamic *check-bytecode* false)
 
-(defmulti ^:private emit-boxed :op )
-(defmulti ^:private emit-unboxed :op )
+(defmulti ^:private emit-boxed :op)
+(defmulti ^:private emit-unboxed :op)
 
 (defn ^:private emit [ast]
   (if false #_(:unboxed ast)
@@ -183,8 +183,9 @@
 (defmulti ^:private emit-value (fn [type value] type))
 
 (defmethod emit-value java.lang.Long [t v]
-  (.push *gen* (long v))
-  (.box *gen* (asm-type Long/TYPE)))
+  (doto *gen*
+    (.push (long v))
+    (.box (asm-type Long/TYPE))))
 
 (defmethod emit-value Long/TYPE [t v]
   (.push *gen* (long v)))
@@ -193,19 +194,22 @@
   (.push *gen* v))
 
 (defmethod emit-value clojure.lang.Symbol [t v]
-  (.push *gen* (namespace v))
-  (.push *gen* (name v))
-  (.invokeStatic *gen* symbol-type (Method/getMethod "clojure.lang.Symbol intern(String,String)")))
+  (doto *gen*
+    (.push (namespace v))
+    (.push (name v))
+    (.invokeStatic symbol-type (Method/getMethod "clojure.lang.Symbol intern(String,String)"))))
 
 (defmethod emit-value clojure.lang.Var [t v]
-  (.push *gen* (namespace v))
-  (.push *gen* (name v))
-  (.invokeStatic *gen* rt-type (Method/getMethod "clojure.lang.Var var(String,String)")))
+  (doto *gen*
+    (.push (namespace v))
+    (.push (name v))
+    (.invokeStatic rt-type (Method/getMethod "clojure.lang.Var var(String,String)"))))
 
 (defmethod emit-value clojure.lang.Keyword [t v]
-  (.push *gen* (namespace v))
-  (.push *gen* (name v))
-  (.invokeStatic *gen* rt-type (Method/getMethod "clojure.lang.Keyword keyword(String,String)")))
+  (doto *gen*
+    (.push (namespace v))
+    (.push (name v))
+    (.invokeStatic rt-type (Method/getMethod "clojure.lang.Keyword keyword(String,String)"))))
 
 (defn- emit-vals-as-array [list]
   (.push *gen* (int (count list)))
@@ -244,10 +248,11 @@
 
 (defn- emit-constructors [cv ast]
   (let [ctor (GeneratorAdapter. Opcodes/ACC_PUBLIC constructor-method nil nil cv)]
-    (.loadThis ctor)
-    (.invokeConstructor ctor (asm-type (:super ast)) constructor-method)
-    (.returnValue ctor)
-    (.endMethod ctor))
+    (doto ctor
+      .loadThis
+      (.invokeConstructor (asm-type (:super ast)) constructor-method)
+      .returnValue
+      .endMethod))
   (let [m (Method/getMethod "void <clinit> ()")
         line (-> ast :env :line )
         {:keys [class fields]} @*frame*]
@@ -281,7 +286,7 @@
           interfaces (into-array String (map #(-> % asm-type .getInternalName) (:interfaces ast)))]
       (doto cw
         (.visit Opcodes/V1_5 (+ Opcodes/ACC_PUBLIC Opcodes/ACC_SUPER) internal-name nil super interfaces)
-        ;                (.visitSource internal-name (debug-info internal-name "NO_SOURCE_PATH" (-> ast :env :line)))
+        ;;(visitSource internal-name (debug-info internal-name "NO_SOURCE_PATH" (-> ast :env :line)))
         (.visitSource internal-name nil)
         (emit-vars ast)
         (emit-constants ast)
@@ -298,7 +303,8 @@
     (when (> n max-positional-arity)
       (emit-as-array (subvec args max-positional-arity)))
     ; Java clojure calls method.emitClearLocals here, but it does nothing?
-    (.invokeInterface *gen* ifn-type (Method. "invoke" object-type (get arg-types (min (count args) (inc max-positional-arity)))))))
+    (.invokeInterface *gen* ifn-type
+                      (Method. "invoke" object-type (get arg-types (min (count args) (inc max-positional-arity)))))))
 
 (defmulti emit-convert (fn [t e] [t (class e)]))
 (defmethod emit-convert :default [t e]
@@ -330,14 +336,14 @@
   (if (primitive? t)
     (cond
       (= t Boolean/TYPE)
-      (do
-        (.checkCast *gen* Type/BOOLEAN_TYPE)
-        (.invokeVirtual *gen* Type/BOOLEAN_TYPE (Method/getMethod "boolean booleanValue()")))
+      (doto *gen*
+        (.checkCast Type/BOOLEAN_TYPE)
+        (.invokeVirtual Type/BOOLEAN_TYPE (Method/getMethod "boolean booleanValue()")))
 
       (= t Character/TYPE)
-      (do
-        (.checkCast *gen* Type/CHAR_TYPE)
-        (.invokeVirtual *gen* Type/CHAR_TYPE (Method/getMethod "char charValue()")))
+      (doto *gen*
+        (.checkCast Type/CHAR_TYPE)
+        (.invokeVirtual Type/CHAR_TYPE (Method/getMethod "char charValue()")))
 
       :else
       (do
@@ -385,27 +391,30 @@
         protocol-on (maybe-class (:on proto))]
     ; load the first arg, so we can see its type
     (emit e)
-    (.dup *gen*)
-    (.invokeStatic *gen* util-type (Method/getMethod "Class classOf(Object)"))
-    (.loadThis *gen*)
-    (.getField *gen* class (-> protos fsym :cached-class ) class-type) ; target,class,cached-class
-    ; Check if first arg type is same as cached
-    (.visitJumpInsn *gen* Opcodes/IF_ACMPEQ call-label) ; target
+    (doto *gen*
+      .dup
+      (.invokeStatic util-type (Method/getMethod "Class classOf(Object)"))
+      .loadThis
+      (.getField class (-> protos fsym :cached-class ) class-type) ; target,class,cached-class
+      ;; Check if first arg type is same as cached
+      (.visitJumpInsn Opcodes/IF_ACMPEQ call-label)) ; target
     (when protocol-on
-      (.dup *gen*) ; target, target
-      (.instanceOf *gen* (asm-type protocol-on))
-      (.ifZCmp *gen* GeneratorAdapter/NE on-label))
-    (.dup *gen*) ; target, target
-    (.invokeStatic *gen* util-type (Method/getMethod "Class classOf(Object)")) ; target, class
-    (.loadThis *gen*)
-    (.swap *gen*)
-    (.putField *gen* class (-> protos fsym :cached-class) class-type) ; target
+      (doto *gen*
+        .dup                     ; target, target
+        (.instanceOf (asm-type protocol-on))
+        (.ifZCmp GeneratorAdapter/NE on-label)))
+    (doto *gen*
+      .dup ; target, target
+      (.invokeStatic util-type (Method/getMethod "Class classOf(Object)")) ; target, class
+      .loadThis
+      .swap
+      (.putField class (-> protos fsym :cached-class) class-type) ; target
 
-    ; Slow path through proto-fn
-    (.mark *gen* call-label) ; target
-    (.getStatic *gen* class (-> fvar fields :name) var-type)
-    (.invokeVirtual *gen* var-type var-get-raw-method) ; target, proto-fn
-    (.swap *gen*)
+      ;; Slow path through proto-fn
+      (.mark call-label) ; target
+      (.getStatic class (-> fvar fields :name) var-type)
+      (.invokeVirtual var-type var-get-raw-method) ; target, proto-fn
+      .swap)
     (emit-args-and-call args 1)
     (.goTo *gen* end-label)
 
@@ -424,8 +433,7 @@
         (emit-typed-args (:parameter-types meth) (rest args))
         (when (= (-> f :info :env :context ) :return )
           ; emit-clear-locals
-          (println "Clear locals")
-          )
+          (println "Clear locals"))
         (let [r (:return-type meth)
               m (apply asm-method (:name meth) r (:parameter-types meth))]
           (.invokeInterface *gen* (asm-type protocol-on) m)
@@ -446,8 +454,9 @@
 (defn- emit-var [v]
   (let [var (var! v)
         {:keys [class fields]} @*frame*]
-    (.getStatic *gen* class (:name (fields var)) var-type)
-    (.invokeVirtual *gen* var-type (if (dynamic? var) var-get-method var-get-raw-method))))
+    (doto *gen*
+      (.getStatic class (:name (fields var)) var-type)
+      (.invokeVirtual var-type (if (dynamic? var) var-get-method var-get-raw-method)))))
 
 (defn- emit-local [v]
   (let [lb (-> @*frame* :locals v)
@@ -480,12 +489,13 @@
     (.visitLineNumber *gen* line (.mark *gen*))
     (emit-test test null-label false-label)
     (emit then)
-    (.goTo *gen* end-label)
+    (doto *gen*
+      (.goTo end-label)
 
-    (.mark *gen* null-label)
-    (.pop *gen*)
+      (.mark null-label)
+      .pop
 
-    (.mark *gen* false-label)
+      (.mark false-label))
     (emit else)
 
     (.mark *gen* end-label)))
@@ -514,8 +524,9 @@
     (let [{:keys [class fields]} @*frame*
           {:keys [name type]} (fields v)
           type (asm-type type)]
-      (.getStatic *gen* class name type)
-      (.box *gen* type))))
+      (doto *gen*
+        (.getStatic class name type)
+        (.box type)))))
 
 (defmethod emit-boxed :constant [{:keys [form env]}]
   (emit-constant java.lang.Object form))
@@ -544,8 +555,11 @@
               index (if (:this lb) 0 (next-local type))]
           [sym {:index index :type type :label (.mark *gen*)}])))))
 
-(defn emit-method [cv {:as form :keys [name params statements ret env recurs type] :or {name "invoke" type java.lang.Object}}]
-  (binding [*gen* (GeneratorAdapter. Opcodes/ACC_PUBLIC (apply asm-method name type (map expression-type params)) nil nil cv)
+(defn emit-method
+  [cv {:as form :keys [name params statements ret env recurs type]
+       :or {name "invoke" type java.lang.Object}}]
+  (binding [*gen* (GeneratorAdapter. Opcodes/ACC_PUBLIC
+                                     (apply asm-method name type (map expression-type params)) nil nil cv)
             *frame* (copy-frame :locals (-> @*frame* :locals (merge (compute-locals form))))]
     (.visitCode *gen*)
     (let [end-label (.newLabel *gen*)]
@@ -556,11 +570,13 @@
       (.mark *gen* end-label)
       (doseq [[name {:keys [type label index]}] (:locals @*frame*)]
         (.visitLocalVariable *gen* (str name) (-> type asm-type .getDescriptor) nil label end-label index))
-      (.unbox *gen* (asm-type type))
-      (.returnValue *gen*)
-      (.endMethod *gen*))))
+      (doto *gen*
+        (.unbox (asm-type type))
+        .returnValue
+        .endMethod))))
 
-(defn- emit-fn-methods [cv {:keys [name env methods max-fixed-arity variadic recur-frames] :as ast}]
+(defn- emit-fn-methods
+  [cv {:keys [name env methods max-fixed-arity variadic recur-frames] :as ast}]
   (let [loop-locals (seq (mapcat :names (filter #(and % @(:flag %)) recur-frames)))]
     (when loop-locals
       (notsup "loop-locals"))
@@ -577,9 +593,10 @@
         bytecode (.toByteArray cw)
         class (load-class name bytecode ast)
         type (asm-type class)]
-    (.newInstance *gen* type)
-    (.dup *gen*)
-    (.invokeConstructor *gen* type constructor-method)))
+    (doto *gen*
+      (.newInstance type)
+      .dup
+      (.invokeConstructor type constructor-method))))
 
 (defn- emit-bindings [bindings]
   (into {}
@@ -667,9 +684,10 @@
         bytecode (.toByteArray cw)
         class (load-class name bytecode ast)
         type (asm-type class)]
-    (.newInstance *gen* type)
-    (.dup *gen*)
-    (.invokeConstructor *gen* type constructor-method)))
+    (doto *gen*
+      (.newInstance type)
+      .dup
+      (.invokeConstructor type constructor-method))))
 
 (defmethod emit-boxed :vector [args]
   (emit-as-array (:children args))
