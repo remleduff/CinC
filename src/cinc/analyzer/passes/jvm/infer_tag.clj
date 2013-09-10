@@ -249,10 +249,8 @@
 
 (defn infer-tag
   [{:keys [tag form name] :as ast}]
-  (if tag
-    ast
-    (if-let [tag (:tag (meta name))]
-      (assoc ast :tag tag)
-      (if-let [form-tag (:tag (meta form))]
-        (assoc ast :tag form-tag)
-        (-infer-tag ast)))))
+  (if-let [tag (or tag
+                   (:tag (meta name))
+                   (:tag (meta form)))]
+    (assoc ast :tag tag)
+    (-infer-tag ast)))
