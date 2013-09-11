@@ -188,8 +188,20 @@
     (assoc ast :tag tag)
     ast))
 
+(defn- -infer-loop-binding-tag
+  [{:keys [name init] :as binding} {:keys [loop-recur-paths :as loop]}]
+  (if-let [tag (:tag init)]
+    (let [recur-paths (loop-recur-paths name)
+          tags (into [tag] (map #(->> % (get-in loop) :tag))
+          matching? (every? )]
+      )
+    ast
+
+  )
+
 (defmethod -infer-tag :loop
-  [{:keys [body] :as ast}]
+  [{:keys [bindings body] :as ast}]
+  (let [ast (assoc ast :bindings (mapv ))])
   (if-let [tag (:tag body)]
     (assoc ast :tag tag)
     ast))
@@ -254,3 +266,4 @@
                    (:tag (meta form)))]
     (assoc ast :tag tag)
     (-infer-tag ast)))
+

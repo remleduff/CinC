@@ -45,3 +45,4 @@
     (is (= 2 (-> c-ast :low)))
     (is (= 0 (-> c-ast :shift)))
     (is (= 0 (-> c-ast :mask)))))
+

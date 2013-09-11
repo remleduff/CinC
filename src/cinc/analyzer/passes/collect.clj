@@ -95,9 +95,15 @@
 
 (defn collect [& what]
   (fn [{:keys [op env] :as ast}]
-    (if (#{:fn :deftype :reify} op)
+    (case op
+      (:fn :deftype :reify)
       (binding [*collects* *collects*]
         (let [f (apply comp (filter identity (mapv collect-fns what)))]
           (into (postwalk ast f)
                 *collects*)))
+
+      ;; default case
       ast)))
+
+
+

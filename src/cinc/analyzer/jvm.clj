@@ -13,6 +13,7 @@
             [cinc.analyzer.passes.constant-lifter :refer [constant-lift]]
             [cinc.analyzer.passes.warn-earmuff :refer [warn-earmuff]]
             [cinc.analyzer.passes.collect :refer [collect]]
+            [cinc.analyzer.passes.collect-recurs :refer [collect-recurs]]
             [cinc.analyzer.passes.jvm.box :refer [box]]
             [cinc.analyzer.passes.uniquify :refer [uniquify-locals]]
             [cinc.analyzer.passes.jvm.clear-locals :refer [annotate-branch clear-locals]]
@@ -241,7 +242,8 @@
                 warn-earmuff
                 annotate-branch
                 source-info
-                elide-meta))
+                elide-meta
+                collect-recurs))
             (comp (cycling infer-tag analyze-host-expr validate box)
                infer-constant-tag
                constant-lift))
@@ -255,3 +257,4 @@
 (defn analyze-file
   [file]
   (ana/analyze-file file analyze))
+

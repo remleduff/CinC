@@ -10,6 +10,7 @@
             [cinc.analyzer.passes.constant-lifter :refer [constant-lift]]
             [cinc.analyzer.passes.warn-earmuff :refer [warn-earmuff]]
             [cinc.analyzer.passes.collect :refer [collect]]
+            [cinc.analyzer.passes.collect-recurs :refer [collect-recurs]]
             [cinc.analyzer.passes.jvm.clear-locals :refer [annotate-branch clear-locals]]
             [cinc.analyzer.passes.jvm.validate :refer [validate]]
             [cinc.analyzer.passes.jvm.infer-tag :refer [infer-tag infer-constant-tag]]
@@ -128,6 +129,16 @@
 
     (is (= #{:foo} (-> c-test :keyword-callsites)))))
 
+(use 'clojure.pprint)
+;;(deftest collect-loop-test
+  (let [c-test (-> (ast (loop [a 1] (if 1 (recur (dec a)) (recur (inc a)))))
+                 (postwalk (comp validate constant-lift))
+                 (prewalk collect-recurs)
+                 )]
+    (-> c-test clojure.pprint/pprint)
+;;    (get-in c-test [:body :ret :else])
+  )
+
 (deftest clear-locals-test
   (let [f-expr (-> (ast (fn [x] (if x x x) x (if x (do x x) (if x x x))))
                  (prewalk annotate-branch)
@@ -192,7 +203,7 @@
     (is (= Long (-> t-ast :body :ret :tag))))
 
   (let [d-ast (jvm-ast (Double/isInfinite 2))]
-      (is (= Boolean/TYPE (-> d-ast :tag)))
+      (is (= Boolean/TYPE (-> d-ast :tag))
       (is (= Double/TYPE (->> d-ast :args first :cast))))
 
   (let [t-ast (jvm-ast (let [a 1
@@ -251,3 +262,8 @@
     (is (= true (-> f-expr :ret :else :test :should-not-clear)))
     (is (= true (-> f-expr :ret :else :then :to-clear?)))
     (is (= true (-> f-expr :ret :else :else :to-clear?)))))
+
+
+
+
+
